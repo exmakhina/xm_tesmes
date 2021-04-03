@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2018-2021 Jérôme Carretero <cJ@zougloub.eu>
+# SPDX-License-Identifier: MIT
+
+ACTION!="add|change", GOTO="symbol_hidraw_end"
+
+# Motorola/Symbol/Zebra DS6708
+KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="05e0", ATTRS{idProduct}=="0600", TAG+="uaccess", GROUP="plugdev", MODE="0660"
+
+LABEL="symbol_hidraw_end"
