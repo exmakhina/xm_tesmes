@@ -64,10 +64,9 @@ def main():
 		 port="/dev/ttyACM0",
 		 bytesize=serial.EIGHTBITS,
 		 parity=serial.PARITY_NONE,
-		 #stopbit
 		)
 
-		with ser as fi:#with io.open("/dev/ttyACM0", "rb") as fi:
+		with ser as fi:
 			s = symbol_cdc_read(fi)
 			sys.stdout.buffer.write(s)
 			sys.stdout.buffer.flush()
