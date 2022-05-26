@@ -4,6 +4,9 @@
 
 import sys, time
 import serial
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PSU(object):
 	def __init__(self, port="/dev/ttyACM0"):
@@ -31,15 +34,19 @@ class PSU(object):
 		"""
 		ser = self._serial
 		if l is None:
+			logger.debug("> %s", cmd.encode())
 			ser.write(cmd.encode())
 			time.sleep(timeout)
 			x = ser.read(ser.in_waiting)
+			logger.debug("< %s", x.hex())
 		else:
 			while True:
+				logger.debug("> %s", cmd.encode())
 				ser.write(cmd.encode())
 				timeout = ser.timeout
 				ser.timeout = 1.0
 				x = ser.read(l)
+				logger.debug("< %s", x)
 				ser.timeout = timeout
 				if len(x) != l:
 					sys.stderr.write("Warning, no response from meter\n")
@@ -60,6 +67,9 @@ class PSU(object):
 
 		Note: currently {I,V}{SET,OUT}{1,2} all use l=5.
 		"""
+		if not word.endswith("?"):
+			word = word + "?"
+
 		return float(self.cmd(word, l=l))
 
 	def setvalue(self, word, value):
@@ -78,10 +88,10 @@ class PSU(object):
 		self.cmd("%s:%s" % (word, fmt % value))
 
 	def set_on(self, doit=True):
-		self.cmd("OUT%d" % doit, l=0)
+		self.cmd("OUT%d" % doit, l=None)
 
 	def lock(self, doit=True):
-		self.cmd("LOCK%d" % doit, l=0)
+		self.cmd("LOCK%d" % doit, l=None)
 
 	def print_status(self):
 		"""
@@ -102,10 +112,38 @@ class PSU(object):
 
 if __name__ == '__main__':
 
+	import argparse
+
+	parser = argparse.ArgumentParser(
+	 description="Test",
+	)
+
+	parser.add_argument("--log-level",
+	 default="INFO",
+	 help="Logging level (eg. INFO, see Python logging docs)",
+	)
+
+	try:
+		import argcomplete
+		argcomplete.autocomplete(parser)
+	except:
+		pass
+
+	args = parser.parse_args()
+
+	logging.root.setLevel(getattr(logging, args.log_level))
+
+	logging.basicConfig(
+		format="%(levelname)s %(message)s"
+	)
+
 	s = PSU()
 	#s.test()
 	idn = s.idn()
-	s.print_status()
+	print(idn)
+	while True:
+		s.print_status()
+		time.sleep(1)
 	s.setvalue("VSET1", 5.00)
 	s.setvalue("ISET1", 1.0)
 	s.setvalue("VSET2", 0.00)
