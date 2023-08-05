@@ -9,17 +9,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 class PSU(object):
-	def __init__(self, port="/dev/ttyACM0"):
-		ser = serial.Serial(
-		 port=port,
-		 baudrate=9600,
-		 bytesize=serial.EIGHTBITS,
-		 parity=serial.PARITY_NONE,
-		 stopbits=serial.STOPBITS_ONE,
-		 timeout=0.1,
-		 xonxoff=False,
-		)
+	def __init__(self, ser):
 		self._serial = ser
+
+	def __enter__(self):
+		self.cmd("*IDN?")
+		return self
+
+	def __exit__(self, exc_type, exc_value, exc_tb):
+		pass
 
 	def cmd(self, cmd, timeout=0.1, l=None):
 		"""
@@ -97,6 +95,7 @@ class PSU(object):
 		"""
 		TODO
 		"""
+		#out1 = self.getvalue("OUT1?")
 		iset1 = self.getvalue("ISET1?")
 		vset1 = self.getvalue("VSET1?")
 		iout1 = self.getvalue("IOUT1?")
@@ -110,7 +109,7 @@ class PSU(object):
 		print("VSET2=%.2f ISET2=%.3f VOUT2=%.2f IOUT2=%.3f" \
 		 % (vset2, iset2, vout2, iout2))
 
-if __name__ == '__main__':
+def main():
 
 	import argparse
 
@@ -122,6 +121,31 @@ if __name__ == '__main__':
 	 default="INFO",
 	 help="Logging level (eg. INFO, see Python logging docs)",
 	)
+
+	parser.add_argument("--serial-port",
+	 help="",
+	)
+
+	subparsers = parser.add_subparsers(
+	 help='the command; type "%s COMMAND -h" for command-specific help' % sys.argv[0],
+	 dest='command',
+	)
+
+
+	subp = subparsers.add_parser(
+	 "power",
+	 help="Configure power",
+	)
+
+	subp.add_argument("state",
+	 type=int,
+	 choices=(0,1),
+	)
+
+	def do_power(psu, args):
+		psu.set_on(args.state)
+
+	subp.set_defaults(func=do_power)
 
 	try:
 		import argcomplete
@@ -137,6 +161,29 @@ if __name__ == '__main__':
 		format="%(levelname)s %(message)s"
 	)
 
+
+	if getattr(args, 'func', None) is None:
+		parser.print_help()
+		return 1
+	else:
+		if args.serial_port is None:
+			args.serial_port = "/dev/serial/by-id/usb-USB_Vir_USB_Virtual_COM_NT2009101400-if00"
+
+		ser = serial.Serial(
+		 port=args.serial_port,
+		 baudrate=9600,
+		 bytesize=serial.EIGHTBITS,
+		 parity=serial.PARITY_NONE,
+		 stopbits=serial.STOPBITS_ONE,
+		 timeout=0.1,
+		 xonxoff=False,
+		)
+
+		with ser:
+			with PSU(ser) as psu:
+				args.func(psu, args)
+		return 0
+
 	s = PSU()
 	#s.test()
 	idn = s.idn()
@@ -144,6 +191,9 @@ if __name__ == '__main__':
 	while True:
 		s.print_status()
 		time.sleep(1)
+
+	raise SystemExit()
+
 	s.setvalue("VSET1", 5.00)
 	s.setvalue("ISET1", 1.0)
 	s.setvalue("VSET2", 0.00)
@@ -151,3 +201,8 @@ if __name__ == '__main__':
 
 	time.sleep(1)
 	s.print_status()
+
+
+if __name__ == '__main__':
+	ret = main()
+	raise SystemExit(ret)
