@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 vi:noet
 # PSU implementation for Keysight E3633A and E3634A
+# SPDX-FileCopyrightText: 2016,2023 Jérôme Carretero <cJ@zougloub.eu>
+# SPDX-License-Identifier: MIT
 
 """
 The notable thing about this PSU is the serial port quirkiness:
@@ -12,8 +14,27 @@ The notable thing about this PSU is the serial port quirkiness:
 """
 
 import logging
+import time
+import contextlib
 
 logger = logging.getLogger(__name__)
+
+
+@contextlib.contextmanager
+def create_serial_scpi(port):
+	import serial
+	# Configure using CONFIG > COMM
+	ser = serial.Serial(port="/dev/ttyUSB1",
+	 baudrate=9600,
+	 parity=serial.PARITY_NONE,
+	 bytesize=serial.EIGHTBITS,
+	 stopbits=serial.STOPBITS_TWO,
+	 dsrdtr=True,
+	)
+	with ser:
+		from ..scpi.serial import SCPI
+		with SCPI(ser, eol=b"\n") as scpi:
+			yield scpi
 
 
 class PSU:
@@ -76,6 +97,10 @@ def main(argv=None):
 	 help="Logging level (eg. INFO, see Python logging docs)",
 	)
 
+	parser.add_argument("--serial-port",
+	 default="/dev/ttyUSB0",
+	)
+
 	try:
 		import argcomplete
 		argcomplete.autocomplete(parser)
@@ -90,93 +115,80 @@ def main(argv=None):
 	 format="%(asctime)-15s %(name)s %(levelname)s %(message)s"
 	)
 
-	import serial
-	from exmakhina.tesmes.scpi.serial import SCPI
+	logging.getLogger("matplotlib.font_manager").setLevel(logging.INFO)
 
-	# Configure using CONFIG > COMM
-	ser = serial.Serial(port="/dev/ttyUSB0",
-	 baudrate=9600,
-	 parity=serial.PARITY_NONE,
-	 bytesize=serial.EIGHTBITS,
-	 stopbits=serial.STOPBITS_TWO,
-	 dsrdtr=True,
-	)
+	with create_serial_scpi(args.serial_port) as scpi:
+		with PSU(scpi) as psu:
 
-	import time
+			vref = psu.voltage_setpoint_get()
+			logger.info("V: %f", vref)
+			iref = psu.current_setpoint_get()
+			logger.info("I: %f", iref)
 
-	with ser:
-		with SCPI(ser, eol=b"\n") as scpi:
-			with PSU(scpi) as psu:
+			ts = []
+			vus = []
+			vis = []
+			for idx_step in range(10):
+				u, i = psu.sense_both()
+				t = time.time()
+				ts.append(t)
+				vus.append(u)
+				vis.append(i)
 
-				vref = psu.voltage_setpoint_get()
-				logger.info("V: %f", vref)
-				iref = psu.current_setpoint_get()
-				logger.info("I: %f", iref)
+		import matplotlib
+		import matplotlib.figure
+		import matplotlib.patches
+		import matplotlib.mlab as mlab
+		import matplotlib.backend_bases
 
-				ts = []
-				vus = []
-				vis = []
-				for idx_step in range(10):
-					u, i = psu.sense_both()
-					t = time.time()
-					ts.append(t)
-					vus.append(u)
-					vis.append(i)
+		subpcfg = matplotlib.figure.SubplotParams(
+		 left  =0.10,
+		 bottom=0.10,
+		 right =0.90,
+		 top   =0.90,
+		 wspace=0.00,
+		 hspace=0.00,
+		)
+		figure = matplotlib.figure.Figure(
+		 facecolor='white',
+		 edgecolor='white',
+		 subplotpars=subpcfg,
+		)
 
-			import matplotlib
-			import matplotlib.figure
-			import matplotlib.patches
-			import matplotlib.mlab as mlab
-			import matplotlib.backend_bases
+		figure.set_figheight(8)
+		figure.set_figwidth(12)
+		figure.set_dpi(72)
 
-			subpcfg = matplotlib.figure.SubplotParams(
-			 left  =0.10,
-			 bottom=0.10,
-			 right =0.90,
-			 top   =0.90,
-			 wspace=0.00,
-			 hspace=0.00,
-			)
-			figure = matplotlib.figure.Figure(
-			 facecolor='white',
-			 edgecolor='white',
-			 subplotpars=subpcfg,
-			)
+		axes = figure.add_subplot(1, 1, 1)
 
-			figure.set_figheight(8)
-			figure.set_figwidth(12)
-			figure.set_dpi(72)
+		axes.xaxis.grid(True)
+		axes.yaxis.grid(True)
+		axes.set_xlabel("Time")
+		color = 'tab:blue'
+		axes.set_ylabel("Voltage (V)", color=color)
+		axes.plot(ts, vus, label="U", color=color)
+		axes.tick_params(axis="y", labelcolor=color)
+		axes.set_ylim((0, 5))
 
-			axes = figure.add_subplot(1, 1, 1)
+		ax2 = axes.twinx()
+		color = 'tab:red'
+		ax2.set_ylabel("Current (A)", color=color)
+		ax2.plot(ts, vis, color=color)
+		ax2.tick_params(axis="y", labelcolor=color)
+		ax2.set_ylim((0, 2))
 
-			axes.xaxis.grid(True)
-			axes.yaxis.grid(True)
-			axes.set_xlabel("Time")
-			color = 'tab:blue'
-			axes.set_ylabel("Voltage (V)", color=color)
-			axes.plot(ts, vus, label="U", color=color)
-			axes.tick_params(axis="y", labelcolor=color)
-			axes.set_ylim((0, 5))
+		#axes.legend()
 
-			ax2 = axes.twinx()
-			color = 'tab:red'
-			ax2.set_ylabel("Current (A)", color=color)
-			ax2.plot(ts, vis, color=color)
-			ax2.tick_params(axis="y", labelcolor=color)
-			ax2.set_ylim((0, 2))
+		title = "Sample plot"
+		figure.suptitle(title)
 
-			#axes.legend()
-
-			title = "Sample plot"
-			figure.suptitle(title)
-
-			out_dir = "."
-			base = "plot"
-			for ext in ("svg", "png", "pdf"):
-				canvas_class = matplotlib.backend_bases.get_registered_canvas_class(ext)
-				figure_canvas = canvas_class(figure)
-				canvas_print = getattr(figure_canvas, 'print_%s' % ext)
-				canvas_print("%s.%s" % (base, ext))
+		out_dir = "."
+		base = "plot"
+		for ext in ("svg", "png", "pdf"):
+			canvas_class = matplotlib.backend_bases.get_registered_canvas_class(ext)
+			figure_canvas = canvas_class(figure)
+			canvas_print = getattr(figure_canvas, 'print_%s' % ext)
+			canvas_print("%s.%s" % (base, ext))
 
 
 if __name__ == "__main__":
