@@ -138,7 +138,6 @@ SCPI Commands
           :MEAS:CURR?
           :MEAS:VOLT?
           :MEAS:POW?
-          :MEAS:RES?
 
      - Measurement
 
@@ -153,8 +152,8 @@ SCPI Commands
    * - .. code:: scpi
 
          :INP?
-         INP 1
-         INP 0
+         :INP 1
+         :INP 0
 
      - Enable/disable input (close or open circuit)
 
