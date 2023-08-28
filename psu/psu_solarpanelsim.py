@@ -15,8 +15,11 @@ logger = logging.getLogger(__name__)
 class SolarPanel:
 	def __init__(self, psu, ivcurve, ocv, cci):
 		"""
-		:param ivcurve: callable returning i(v)(p)
+		:param ivcurve: callable returning i(v)
+		:param ocv: open-circuit (max) voltage
+		:param cci: closed-circuit (max) current
 		"""
+
 		self.psu = psu
 		self._iv = ivcurve
 		self._ocv = ocv
@@ -32,11 +35,6 @@ class SolarPanel:
 	def __exit__(self, exc_type, exc_value, exc_tb):
 		self.running = False
 		self.t.join()
-
-	def ivcurve_set(self, curve):
-		"""
-		"""
-		self._iv = curve
 
 	def run(self):
 		"""
