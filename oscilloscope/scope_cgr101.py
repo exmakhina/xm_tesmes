@@ -4,7 +4,7 @@
 # A low-cost display-less multifunction scope
 
 """
-2-channel, 20 Msps, download rate 5/s
+2-channel, 20 Msps / 2 MHz, download rate 5/s
 """
 
 import time
