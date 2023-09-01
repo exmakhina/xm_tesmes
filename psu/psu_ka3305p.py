@@ -14,6 +14,8 @@ class PSU(object):
 
 	def __enter__(self):
 		self.cmd("*IDN?")
+		idn = self.idn()
+		logger.info("IDN: %s", idn)
 		return self
 
 	def __exit__(self, exc_type, exc_value, exc_tb):
@@ -55,6 +57,23 @@ class PSU(object):
 	def idn(self):
 		return self.cmd("*IDN?")
 
+	def voltage_setpoint_get(self, output=0):
+		return self.getvalue(f"VSET{output+1}?")
+
+	def voltage_setpoint_set(self, value, output=0):
+		self.setvalue(f"VSET{output+1}", value)
+
+	def current_setpoint_get(self, output=0):
+		return self.getvalue(f"ISET{output+1}?")
+
+	def current_setpoint_set(self, value, output=0):
+		self.setvalue(f"ISET{output+1}", value)
+
+	def sense_voltage(self, output=0):
+		return self.getvalue(f"VOUT{output+1}?")
+
+	def sense_current(self, output=0):
+		return self.getvalue(f"IOUT{output+1}?")
 
 	def getvalue(self, word, l=5):
 		"""
@@ -87,6 +106,8 @@ class PSU(object):
 
 	def set_on(self, doit=True):
 		self.cmd("OUT%d" % doit, l=None)
+
+	enable = set_on
 
 	def lock(self, doit=True):
 		self.cmd("LOCK%d" % doit, l=None)
