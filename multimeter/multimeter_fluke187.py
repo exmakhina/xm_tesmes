@@ -31,6 +31,7 @@ class Multimeter():
 
 	def measure_immediate(self):
 		self.s.write(b"QM\r")
+		now = time.monotonic()
 		code = self.s.read_until(b"\r")
 		value = self.s.read_until(b"\r")
 		logger.debug("code, value = %s, %s\r\n", code, value)
@@ -51,4 +52,4 @@ class Multimeter():
 				unit = unit[1:]
 				break
 
-		return value, unit
+		return now, value, unit
