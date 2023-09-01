@@ -11,6 +11,7 @@ References:
 """
 
 import sys, io, os, subprocess
+import re
 import logging
 import time, datetime
 import threading
@@ -34,7 +35,7 @@ class Multimeter():
 		self.t.start()
 		return self
 
-	def __exit__(self, *args):
+	def __exit__(self, exc_type, exc_value, exc_traceback):
 		self.running = False
 		self.t.join()
 
@@ -46,64 +47,47 @@ class Multimeter():
 		with subprocess.Popen(self.cmd, stdout=subprocess.PIPE, env=env) as proc:
 
 			while self.running:
+				logger.debug("Run?")
 				if proc.poll() is not None:
 					break
 				x = proc.stdout.readline()
 				if not x:
 					break
 				x = x.decode("utf-8").strip()
+				t = time.monotonic()
 				logger.debug("< %s", x)
-				t = time.time()
-				k, vu = x.split(":", 1)
+				m = re.match(r"^(?P<k>\S+): (?P<v>\S+)(\s+(?P<u>\S+)(\s+(?P<x>.*))?)?$", x)
+				assert m is not None
+				k = m.group("k")
+				v = float(m.group("v"))
 				try:
-					v, u = vu.split()[:2]
-				except ValueError:
-					v = vu
-				self.queues[k].put((t, float(v)))
+					u = m.group("u")
+				except KeyError:
+					u = None
+				self.queues[k].put((t, v, u))
 
-			proc.terminate()
+			proc.stdout.close()
+			logger.info("term")
+			proc.wait()
+			logger.info("term!")
+			self.running = False
+
+		logger.info("done")
 
 	def get_data(self, key):
-		v = self.queues[key].get()
+		while self.running:
+			try:
+				v = self.queues[key].get(block=True, timeout=1)
+			except queue.Empty:
+				continue
+			return v
+
+	def measure_immediate(self):
+		v = None
+		while self.running:
+			try:
+				v = self.queues["main"].get(block=True, timeout=1)
+			except queue.Empty as e:
+				if v is not None:
+					break
 		return v
-
-
-def main(argv=None):
-	import argparse
-
-	parser = argparse.ArgumentParser(
-	 description="Factory programming tool",
-	)
-
-	parser.add_argument("--log-level",
-	 default="INFO",
-	 help="Logging level (eg. INFO, see Python logging docs)",
-	)
-
-	try:
-		import argcomplete
-		argcomplete.autocomplete(parser)
-	except:
-		pass
-
-	args = parser.parse_args(argv)
-
-	logging.basicConfig(
-	 datefmt="%Y%m%dT%H%M%S",
-	 level=getattr(logging, args.log_level),
-	 format="%(asctime)-15s %(name)s %(levelname)s %(message)s"
-	)
-
-	with (
-	  Multimeter() as f,
-	  io.open("oven.yml", "a") as fo,
-	 ):
-		while True:
-			t, v = f.get_data("main")
-			fo.write(f"- t: {t}\n")
-			fo.write(f"  t_degC: {v}\n")
-			fo.flush()
-
-if __name__ == "__main__":
-	ret = main()
-	raise SystemExit(ret)
