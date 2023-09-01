@@ -2,62 +2,114 @@
 # -*- coding: utf-8 vi:noet
 # Multimeter implementation for the Fluke network multimeter
 
+import io
+import os
 import time, socket, re, datetime, sys
 import logging
 
-"""
+from ..nested_context_mixin import NestedContextMixin
 
-Multimeter is
 
-References:
+with io.open(__file__.replace(".py", ".rst"), "r") as fi:
+	__doc__ = fi.read()
 
-- http://websrv.mece.ualberta.ca/electrowiki/images/b/b5/8845a_Programmers_Manual.pdf
-
-"""
 
 logger = logging.getLogger(__name__)
 
 
-class Multimeter():
+class Multimeter(NestedContextMixin):
 	"""
 	"""
 	def __init__(self, scpi):
-		self.s = scpi
+		NestedContextMixin.__init__(self)
+		self.scpi = scpi
 
-	def __enter__(self, **kw):
+	def init(self):
 		"""
 			Performs initialization of the meter.
 		"""
+		idn = self.scpi.ask("*IDN?")
 		return self
 
-	def __exit__(self, type, exc, tb):
-		logger.debug("OK")
-		#return super().__exit__(type, exc, tb)
+	def exit(self, exc_type, exc_value, exc_tb):
+		pass
+
+	def in_remote(self):
+		def init():
+			self.init_remote()
+			return self
+		def exit(exc_type, exc_value, exc_traceback):
+			# Can't go back
+			self.init_local()
+		return self.add_context_info(init, exit)
+
+	def in_local(self):
+		def init():
+			self.init_local()
+			return self
+		def exit(exc_type, exc_value, exc_traceback):
+			# Can't go back
+			self.init_local()
+		return self.add_context_info(init, exit)
 
 	def init_remote(self):
-		a = self.s.write("SYST:REM")
+		logger.info("Enter remote control")
+		a = self.scpi.write("SYST:REM")
 
 	def init_local(self):
-		a = self.s.write("SYST:LOC")
+		logger.info("Enter local control")
+		a = self.scpi.write("SYST:LOC")
+
+	def streaming_read(self):
+		"""
+		Perform raw stream reading that was initiated using READ?,
+		giving max. 50k measurements.
+		"""
+		self.scpi.write("READ?")
+		while True:
+			try:
+				v = self.scpi.read(15)
+				t = time.monotonic()
+				if v[0] == ord(","):
+					v = v[1:] + self.scpi.read(1)
+				ret = float(v)
+				if ret > 1e37:
+					ret = float("NaN")
+				yield t, ret
+			except KeyboardInterrupt:
+				self.scpi.write("")
+				break
+
+	def immediate_read(self):
+		"""
+		Perform single reading, using *TRG and READ?
+		"""
+		self.scpi.write("*TRG")
+		t = time.monotonic()
+		ret = self.scpi.ask("READ?")
+		ret = float(v)
+		if ret > 1e37:
+			ret = float("NaN")
+		yield t, ret
 
 	def get_both(self):
-		l = self.s.ask("INIT; FETCH1?; FETCH2?")
+		l = self.scpi.ask("INIT; FETCH1?; FETCH2?")
 		m = re.match(r"(?P<i>\S+);(?P<v>\S+)", l)
 		assert m is not None
 		return float(m.group("i")), float(m.group("v"))
 
 	def get_one(self):
-		l = self.s.ask("INIT; FETCH1?")
+		l = self.scpi.ask("INIT; FETCH1?")
 		m = re.match(r"(?P<i>\S+)", l)
 		assert m is not None
 		return float(m.group("i"))
 
 	def fetch(self, function=1):
-		l = self.s.ask(f"FETCH{function}?")
+		l = self.scpi.ask(f"FETCH{function}?")
 		return [float(x) for x in l.split(",")]
 
 	def get_ohms(self):
-		a = self.s.ask("MEAS:RES?")
+		a = self.scpi.ask("MEAS:RES?")
 		b = re.match(r"^'(\S+?)(\r\n)?'$", a)
 		c = b.group(1)
 		logger.debug("c =",c)
@@ -71,13 +123,13 @@ class Multimeter():
 		return res
 
 	def get_volts(self, rng=100):
-		a = self.s.ask("MEAS:VOLT:DC? %d" % rng)
+		a = self.scpi.ask("MEAS:VOLT:DC? %d" % rng)
 		a = a.strip().replace("+", "").replace("'", "")
 		res = float(a)
 		return res
 
 	def get_amps(self):
-		a = self.s.ask("MEAS:CURR:DC?")
+		a = self.scpi.ask("MEAS:CURR:DC?")
 		#print(a)
 		a = a.strip().replace("+", "").replace("'", "")
 		res = float(a)
